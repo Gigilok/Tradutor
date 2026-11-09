@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
 
 import '../config.dart';
@@ -31,13 +31,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _initialized = false;
   String? _error;
 
+  // O filme pode ser "substituído" localmente quando a amiga escolhe
+  // a cópia dela do arquivo.
+  late Movie _movie = widget.movie;
+
   // Legendas
   List<SubtitleCue> _cues = [];
   bool _subtitlesVisible = true;
   SubtitleCue? _currentCue;
 
   // Assistir junto
-  RealtimeChannel? _playbackChannel;
+  bool _syncActive = false;
   String _controllerName = '';
   bool _applyingRemote = false;
   bool _syncBusy = false;
@@ -50,34 +54,40 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
-    _playbackChannel?.unsubscribe();
     _movies.unsubscribe();
     _controller?.removeListener(_onVideoTick);
     _controller?.dispose();
     super.dispose();
   }
 
-  bool get _isLocal => widget.movie.isLocal;
+  bool get _isLocal => _movie.isLocal;
   bool get _iControl => _controllerName.isEmpty;
 
   Future<void> _initPlayer() async {
     final state = context.read<AppState>();
     try {
+      // Filme local: confere se a cópia existe NESTE aparelho.
+      if (_isLocal) {
+        final path = _movie.localPath;
+        final file = path == null ? null : File(path);
+        if (file == null || !file.existsSync()) {
+          if (mounted) setState(() => _error = 'MISSING_FILE');
+          return;
+        }
+      }
       final VideoPlayerController controller;
       if (_isLocal) {
-        controller = VideoPlayerController.file(File(widget.movie.localPath!));
+        controller = VideoPlayerController.file(File(_movie.localPath!));
       } else {
         controller = VideoPlayerController.networkUrl(
-          Uri.parse(widget.movie.url!),
+          Uri.parse(_movie.url!),
         );
       }
       _controller = controller;
       await controller.initialize();
       controller.addListener(_onVideoTick);
 
-      if (!_isLocal) {
-        await _setupSync(state);
-      }
+      await _setupSync(state);
       if (!mounted) return;
       setState(() => _initialized = true);
       await controller.play();
@@ -90,14 +100,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _setupSync(AppState state) async {
     try {
       final current = await _movies.loadPlayback(state.roomId);
-      if (current != null && current.movieId == widget.movie.id) {
+      if (current != null && current.movieId == _movie.id) {
         _controllerName = current.controller;
       }
-      _playbackChannel = _movies.subscribePlayback(state.roomId, (remote) {
-        if (remote.movieId != widget.movie.id) return;
+      _movies.subscribePlayback(state.roomId, (remote) {
+        if (remote.movieId != _movie.id) return;
         if (!mounted) return;
         _applyRemoteState(remote);
       });
+      _syncActive = true;
     } catch (_) {
       // Sincronização é opcional: segue sem ela.
     }
@@ -137,7 +148,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _publishState() async {
     final state = context.read<AppState>();
     final controller = _controller;
-    if (!_iControl || controller == null || _isLocal || _syncBusy) return;
+    if (!_iControl || controller == null || _syncBusy || !_syncActive) return;
     _syncBusy = true;
     try {
       await _movies.publishPlayback(
@@ -167,7 +178,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
 
     // Quem controla publica a posição a cada ~5 segundos.
-    if (!_isLocal && _iControl) {
+    if (_iControl) {
       final seconds = position.inSeconds;
       if (_lastPublishedSeconds != seconds && seconds % 5 == 0) {
         _lastPublishedSeconds = seconds;
@@ -201,12 +212,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _takeControl() async {
     final state = context.read<AppState>();
     final controller = _controller;
-    if (controller == null || _isLocal) return;
+    if (controller == null) return;
     _controllerName = state.name;
     setState(() {});
     await _movies.publishPlayback(
       roomId: state.roomId,
-      movieId: widget.movie.id,
+      movieId: _movie.id,
       positionSeconds: controller.value.position.inMilliseconds / 1000,
       isPlaying: controller.value.isPlaying,
       controller: state.name,
@@ -394,32 +405,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         title: Text(
-          widget.movie.title,
+          _movie.title,
           style: const TextStyle(fontSize: 16),
         ),
         actions: [
-          if (!_isLocal)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Center(
-                child: _iControl
-                    ? const Chip(
-                        label: Text('Você controla',
-                            style: TextStyle(fontSize: 11)),
-                        avatar: Icon(Icons.gamepad_outlined, size: 15),
-                        visualDensity: VisualDensity.compact,
-                      )
-                    : ActionChip(
-                        label: Text(
-                          '$_controllerName controla — assumir',
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                        avatar: const Icon(Icons.swap_horiz, size: 15),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: _takeControl,
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Center(
+              child: _iControl
+                  ? const Chip(
+                      label: Text('Você controla',
+                          style: TextStyle(fontSize: 11)),
+                      avatar: Icon(Icons.gamepad_outlined, size: 15),
+                      visualDensity: VisualDensity.compact,
+                    )
+                  : ActionChip(
+                      label: Text(
+                        '$_controllerName controla — assumir',
+                        style: const TextStyle(fontSize: 11),
                       ),
-              ),
+                      avatar: const Icon(Icons.swap_horiz, size: 15),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: _takeControl,
+                    ),
             ),
+          ),
         ],
       ),
       body: _error != null
@@ -657,9 +667,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Este vídeo está no seu aparelho, então só você '
-                      'assiste. Para as duas assistirem juntas, use um '
-                      'filme por link.',
+                      'Este vídeo é do seu aparelho. Quando a sua amiga abrir '
+                      'o mesmo filme e escolher a cópia dela, as duas '
+                      'assistem juntas: quem estiver com o selo "controla" '
+                      'comanda o play e a pausa das duas.',
                       style: TextStyle(fontSize: 12.5, color: Colors.white70),
                     ),
                   ),
@@ -691,7 +702,75 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  Future<void> _pickLocalCopy() async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.video,
+        withData: false,
+      );
+      final path = picked?.files.single.path;
+      if (path == null || !mounted) return;
+      // Guarda na pasta do app com o MESMO nome do filme,
+      // para virar a "cópia da amiga" e permitir assistir junto.
+      final dir = await getApplicationDocumentsDirectory();
+      final moviesDir = Directory('${dir.path}/movies');
+      if (!moviesDir.existsSync()) moviesDir.createSync(recursive: true);
+      final name = _movie.fileName ?? picked!.files.single.name;
+      final dest = '${moviesDir.path}/$name';
+      await File(path).copy(dest);
+      if (!mounted) return;
+      setState(() {
+        _error = null;
+        _initialized = false;
+        _movie = _movie.copyWith(localPath: dest);
+      });
+      _initPlayer();
+    } catch (error) {
+      _showError('Não consegui copiar o vídeo: $error');
+    }
+  }
+
   Widget _errorView() {
+    if (_error == 'MISSING_FILE') {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.folder_off_outlined,
+                size: 56,
+                color: Colors.amberAccent,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Esse vídeo está no aparelho de ${_movie.addedBy}.',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Para assistir junto, consiga o arquivo com ${_movie.addedBy} '
+                '(pode mandar pelo WhatsApp) e salve no seu celular. '
+                'Depois toque no botão abaixo e escolha ele.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12.5, color: Colors.white54),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _pickLocalCopy,
+                icon: const Icon(Icons.folder_open),
+                label: const Text('Escolher o vídeo no meu aparelho'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
