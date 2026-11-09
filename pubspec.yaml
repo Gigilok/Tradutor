@@ -1,0 +1,53 @@
+name: ponte_app
+description: "Ponte — conversa traduzida, fotos e filmes com legendas."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # Backend: banco de dados, tempo real e armazenamento de fotos
+  supabase_flutter: ^2.8.0
+
+  # Reprodução de filmes (link mp4/m3u8 ou arquivo local)
+  video_player: ^2.9.2
+
+  # Fotos: galeria e câmera
+  image_picker: ^1.1.2
+
+  # Seleção de arquivos (filmes locais e legendas .srt/.vtt)
+  file_picker: ^8.1.2
+
+  # Requisições HTTP (tradução, download de legendas)
+  http: ^1.2.2
+
+  # Perfil salvo no aparelho
+  shared_preferences: ^2.3.2
+
+  # Cache de imagens do chat
+  cached_network_image: ^3.4.1
+
+  # Gerenciamento de estado simples
+  provider: ^6.1.2
+
+  # Formatação de datas/horas
+  intl: ^0.19.0
+
+  # Pastas do aplicativo (salvar filmes locais)
+  path_provider: ^2.1.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
