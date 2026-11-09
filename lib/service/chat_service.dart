@@ -1,65 +1,61 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../config.dart';
 import '../models.dart';
+import 'mqtt_service.dart';
 
 /// Conversa em tempo real: envio de textos e fotos, escuta de novas
-/// mensagens e consulta de membros da sala.
+/// mensagens e presença (quem está online).
+/// Usa o servidor público gratuito (broker.emqx.io) via [PonteNet].
 class ChatService {
-  RealtimeChannel? _channel;
+  /// Carrega as últimas [limit] mensagens da sala (mais antigas primeiro).
+  /// O histórico vem do servidor na hora da conexão (até ~60 recentes).
+  Future<List<Message>> loadMessages(String roomId, {int limit = 200}) async {
+    return PonteNet.instance.loadMessages(limit: limit);
+  }
 
   /// Escuta novas mensagens da sala em tempo real.
-  /// Retorna o canal criado (guarde para cancelar ao sair da tela).
-  RealtimeChannel subscribeMessages(
+  void subscribeMessages(
     String roomId,
     void Function(Message message) onMessage,
   ) {
-    final client = Supabase.instance.client;
-    _channel?.unsubscribe();
-    final channel = client
-        .channel('mensagens-$roomId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'messages',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'room_id',
-            value: roomId,
-          ),
-          callback: (payload) {
-            final map = payload.newRecord;
-            if (map.isNotEmpty) {
-              onMessage(Message.fromMap(map));
-            }
-          },
-        )
-        .subscribe();
-    _channel = channel;
-    return channel;
+    PonteNet.instance.onMessage = onMessage;
   }
 
-  Future<void> unsubscribe() async {
-    await _channel?.unsubscribe();
-    _channel = null;
+  /// Acompanha quem está online na sala agora.
+  /// [onOthersOnline] recebe os nomes das OUTRAS pessoas online;
+  /// [onOtherLastSeen] recebe quando a outra pessoa foi vista por último.
+  void subscribePresence({
+    required String roomId,
+    required String myName,
+    required void Function(Set<String> others) onOthersOnline,
+    void Function(DateTime? lastSeen)? onOtherLastSeen,
+  }) {
+    PonteNet.instance.onPresenceChanged = () {
+      final friend = PonteNet.instance.friendPresence(myName);
+      onOthersOnline(
+        PonteNet.instance.others
+            .where((p) => p.online)
+            .map((p) => p.name)
+            .toSet(),
+      );
+      onOtherLastSeen?.call(friend?.lastSeen);
+    };
   }
 
-  /// Carrega as últimas [limit] mensagens da sala (mais antigas primeiro).
-  Future<List<Message>> loadMessages(String roomId, {int limit = 200}) async {
-    final client = Supabase.instance.client;
-    final rows = await client
-        .from('messages')
-        .select()
-        .eq('room_id', roomId)
-        .order('created_at', ascending: false)
-        .limit(limit);
-    final list = (rows as List)
-        .map((row) => Message.fromMap(row as Map<String, dynamic>))
-        .toList();
-    return list.reversed.toList();
+  /// Dados de presença da outra pessoa (online agora ou visto por último).
+  PresenceInfo? friendPresence(String myName) =>
+      PonteNet.instance.friendPresence(myName);
+
+  /// Avisa quando uma foto terminou de chegar (para redesenhar a bolha).
+  set onPhotosChanged(void Function()? callback) {
+    PonteNet.instance.onPhotosChanged = callback;
+  }
+
+  /// Idioma mais recente de outra pessoa da sala (null se ainda ninguém).
+  Future<String?> otherLanguage(String roomId, String myName) async {
+    return PonteNet.instance.otherLanguage(myName);
   }
 
   /// Envia uma mensagem de texto.
@@ -71,70 +67,44 @@ class ChatService {
   }) async {
     final clean = text.trim();
     if (clean.isEmpty) return;
-    final client = Supabase.instance.client;
-    await client.from('messages').insert({
-      'room_id': roomId,
-      'sender_name': senderName,
-      'sender_lang': senderLang,
-      'kind': 'text',
-      'original': clean,
-    });
+    await PonteNet.instance.sendChat(
+      senderName: senderName,
+      senderLang: senderLang,
+      kind: 'text',
+      text: clean,
+    );
   }
 
   /// Envia uma foto (arquivo já comprimido) com legenda opcional.
-  /// Retorna a URL pública da foto.
-  Future<String> sendPhoto({
+  /// A foto viaja em pedaços pelo servidor e vai direto para o aparelho
+  /// da outra pessoa — não precisa de link nem de nuvem.
+  Future<void> sendPhoto({
     required String roomId,
     required String senderName,
     required String senderLang,
     required File imageFile,
     String? caption,
   }) async {
-    final client = Supabase.instance.client;
     final bytes = await imageFile.readAsBytes();
-    final stamp = DateTime.now().millisecondsSinceEpoch;
-    final path = '$roomId/foto_$stamp.jpg';
-
-    await client.storage.from(AppConfig.photoBucket).uploadBinary(path, bytes,
-        fileOptions: const FileOptions(contentType: 'image/jpeg'));
-
-    final publicUrl =
-        client.storage.from(AppConfig.photoBucket).getPublicUrl(path);
-
-    await client.from('messages').insert({
-      'room_id': roomId,
-      'sender_name': senderName,
-      'sender_lang': senderLang,
-      'kind': 'image',
-      'original': (caption ?? '').trim(),
-      'image_url': publicUrl,
-    });
-    return publicUrl;
+    await PonteNet.instance.sendPhotoBytes(
+      senderName: senderName,
+      senderLang: senderLang,
+      bytes: bytes,
+      caption: caption,
+    );
   }
 
-  /// Carrega os membros da sala (para saber o idioma da outra pessoa).
-  Future<List<RoomMember>> loadMembers(String roomId) async {
-    final client = Supabase.instance.client;
-    final rows = await client
-        .from('members')
-        .select()
-        .eq('room_id', roomId)
-        .order('last_seen', ascending: false)
-        .limit(20);
-    return (rows as List)
-        .map((row) => RoomMember.fromMap(row as Map<String, dynamic>))
-        .toList();
-  }
+  /// Mantido para compatibilidade: a conexão fica aberta o app inteiro.
+  Future<void> unsubscribe() async {}
 
-  /// Idioma mais recente de outra pessoa da sala (null se ainda ninguém).
-  Future<String?> otherLanguage(String roomId, String myName) async {
-    final members = await loadMembers(roomId);
-    for (final member in members) {
-      if (member.name.toLowerCase() != myName.toLowerCase()) {
-        return member.lang;
-      }
-    }
-    return null;
+  /// Aviso do sistema (ex.: "Maria entrou na sala").
+  Future<void> sendSystem(String text) async {
+    await PonteNet.instance.sendChat(
+      senderName: 'Ponte',
+      senderLang: 'pt',
+      kind: 'system',
+      text: text,
+    );
   }
 }
 
