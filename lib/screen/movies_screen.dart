@@ -251,7 +251,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
             child: ListTile(
               leading: Icon(Icons.folder_outlined),
               title: Text('Arquivo do meu aparelho'),
-              subtitle: Text('Só você assiste este'),
+              subtitle: Text('A amiga escolhe a cópia dela para assistir junto'),
               dense: true,
             ),
           ),
@@ -307,7 +307,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
                         ),
                         subtitle: Text(
                           movie.isLocal
-                              ? 'Arquivo local de ${movie.addedBy} — só no aparelho dele(a)'
+                              ? 'Arquivo local de ${movie.addedBy} — a amiga escolhe a cópia dela'
                               : 'Link · adicionado por ${movie.addedBy}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
