@@ -1,22 +1,12 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 import '../models.dart';
+import 'mqtt_service.dart';
 
 /// Filmes da sala e sincronização de reprodução ("assistir junto").
+/// Usa o servidor público gratuito (broker.emqx.io) via [PonteNet].
 class MovieService {
-  RealtimeChannel? _channel;
-
   /// Lista os filmes da sala, mais recentes primeiro.
   Future<List<Movie>> loadMovies(String roomId) async {
-    final client = Supabase.instance.client;
-    final rows = await client
-        .from('movies')
-        .select()
-        .eq('room_id', roomId)
-        .order('created_at', ascending: false);
-    return (rows as List)
-        .map((row) => Movie.fromMap(row as Map<String, dynamic>))
-        .toList();
+    return PonteNet.instance.loadMovies();
   }
 
   /// Adiciona um filme por link (mp4, m3u8/HLS...).
@@ -26,48 +16,34 @@ class MovieService {
     required String title,
     required String url,
   }) async {
-    final client = Supabase.instance.client;
-    final inserted = await client
-        .from('movies')
-        .insert({
-          'room_id': roomId,
-          'title': title.trim().isEmpty ? 'Filme' : title.trim(),
-          'url': url.trim(),
-          'added_by': addedBy,
-        })
-        .select()
-        .single();
-    return Movie.fromMap(inserted);
+    await PonteNet.instance.addMovie(title: title, url: url.trim());
+    final list = await PonteNet.instance.loadMovies();
+    return list.firstWhere((m) => m.url == url.trim());
   }
 
-  /// Adiciona um filme que está só no aparelho (arquivo local).
+  /// Adiciona um filme que está no aparelho (arquivo local).
+  /// A amiga vê o nome e escolhe a cópia dela para assistir junto.
   Future<Movie> addLocalFile({
     required String roomId,
     required String addedBy,
     required String title,
     required String localPath,
   }) async {
-    final client = Supabase.instance.client;
-    final inserted = await client
-        .from('movies')
-        .insert({
-          'room_id': roomId,
-          'title': title.trim().isEmpty ? 'Filme' : title.trim(),
-          'local_path': localPath,
-          'added_by': addedBy,
-        })
-        .select()
-        .single();
-    return Movie.fromMap(inserted);
+    final name = localPath.split('/').last;
+    await PonteNet.instance.addMovie(title: title, fileName: name);
+    final list = await PonteNet.instance.loadMovies();
+    return list.firstWhere(
+      (m) => m.fileName == name,
+      orElse: () => list.first,
+    );
   }
 
-  /// Remove um filme da lista.
+  /// Remove um filme da lista (some também para a amiga).
   Future<void> removeMovie(String movieId) async {
-    final client = Supabase.instance.client;
-    await client.from('movies').delete().eq('id', movieId);
+    await PonteNet.instance.removeMovie(movieId);
   }
 
-  /// Publica/atualiza o estado de reprodução da sala (sincronização).
+  /// Publica o estado de reprodução (sincronização "assistir junto").
   Future<void> publishPlayback({
     required String roomId,
     required String movieId,
@@ -75,61 +51,28 @@ class MovieService {
     required bool isPlaying,
     required String controller,
   }) async {
-    final client = Supabase.instance.client;
-    await client.from('playback').upsert({
-      'room_id': roomId,
-      'movie_id': movieId,
-      'position_seconds': positionSeconds,
-      'is_playing': isPlaying,
-      'controller': controller,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    });
+    await PonteNet.instance.publishPlayback(
+      movieId: movieId,
+      positionSeconds: positionSeconds,
+      isPlaying: isPlaying,
+      controller: controller,
+    );
   }
 
-  /// Estado de reprodução atual da sala (ou null).
+  /// Estado de reprodução atual (sem persistência: a sincronia é ao vivo).
   Future<PlaybackState?> loadPlayback(String roomId) async {
-    final client = Supabase.instance.client;
-    final row = await client
-        .from('playback')
-        .select()
-        .eq('room_id', roomId)
-        .maybeSingle();
-    if (row == null) return null;
-    return PlaybackState.fromMap(row);
+    return null;
   }
 
   /// Escuta mudanças de reprodução (para acompanhar quem controla).
-  RealtimeChannel subscribePlayback(
+  void subscribePlayback(
     String roomId,
     void Function(PlaybackState state) onChanged,
   ) {
-    final client = Supabase.instance.client;
-    _channel?.unsubscribe();
-    final channel = client
-        .channel('playback-$roomId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'playback',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'room_id',
-            value: roomId,
-          ),
-          callback: (payload) {
-            final map = payload.newRecord;
-            if (map.isNotEmpty) {
-              onChanged(PlaybackState.fromMap(map));
-            }
-          },
-        )
-        .subscribe();
-    _channel = channel;
-    return channel;
+    PonteNet.instance.onPlayback = onChanged;
   }
 
   Future<void> unsubscribe() async {
-    await _channel?.unsubscribe();
-    _channel = null;
+    PonteNet.instance.onPlayback = null;
   }
 }
