@@ -1,0 +1,210 @@
+# =============================================================================
+#  PONTE — Compilação automática (APK Android + app iOS)
+# -----------------------------------------------------------------------------
+#  COMO USAR:
+#    1. Este arquivo deve ficar em:  .github/workflows/build.yml
+#    2. Cada push no repositório dispara a compilação (ou use o botão
+#       "Run workflow" na aba Actions do GitHub).
+#    3. Ao terminar, baixe os resultados em "Artifacts":
+#         - Ponte-APK-Android          -> instale o APK direto no celular
+#         - Ponte-iOS-sem-assinatura   -> app iOS p/ Sideloadly/AltStore
+#
+#  Este workflow NORMALIZA a estrutura do repositório no início (nomes de
+#  pastas com maiúsculas, pastas lib no singular, arquivos com nome quebrado
+#  do envio web), por isso funciona mesmo com o repositório como está hoje.
+# =============================================================================
+
+name: Compilar Ponte
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  # ------------------------------------------------------------ ANDROID (APK)
+  android:
+    name: Android — APK instalável
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Ajustar pastas para o padrão do Flutter
+        run: |
+          # Pastas de plataforma com maiúsculas -> minúsculas (padrão Flutter)
+          [ -d Android ] && mv Android android || true
+          [ -d Ios ] && mv Ios ios || true
+
+          # Pastas do código Dart no singular -> plural (como os imports usam)
+          [ -d lib/service ] && mv lib/service lib/services || true
+          [ -d lib/screen ] && mv lib/screen lib/screens || true
+
+          # Pasta de recurso com nome quebrado (envio web)
+          [ -d android/app/src/main/res/ldrawable-v21 ] && mv android/app/src/main/res/ldrawable-v21 android/app/src/main/res/drawable-v21 || true
+          [ -f android/app/src/main/res/drawable-v21/aunch_background.xml ] && mv android/app/src/main/res/drawable-v21/aunch_background.xml android/app/src/main/res/drawable-v21/launch_background.xml || true
+
+          # Pasta "Java" com maiúscula -> "java"
+          [ -d android/app/src/main/Java ] && [ ! -d android/app/src/main/java ] && mv android/app/src/main/Java android/app/src/main/java || true
+
+          echo '--- estrutura final ---'
+          ls
+          ls lib lib/services lib/screens
+
+      - name: Criar android/build.gradle (padrão do Flutter 3.24)
+        run: |
+          cat > android/build.gradle <<'EOF'
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.buildDir = "../build"
+          subprojects {
+              project.buildDir = "${rootProject.buildDir}/${project.name}"
+          }
+          subprojects {
+              project.evaluationDependsOn(":app")
+          }
+
+          tasks.register("clean", Delete) {
+              delete rootProject.buildDir
+          }
+          EOF
+
+      - name: Instalar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Instalar Flutter 3.24.5
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.24.5
+          cache: true
+
+      - name: Baixar dependências do Dart
+        run: flutter pub get
+
+      - name: Compilar APK
+        run: flutter build apk --release
+
+      - name: Publicar APK para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ponte-APK-Android
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  # ------------------------------------------------------ iOS (sem assinatura)
+  ios:
+    name: iOS — app sem assinatura
+    runs-on: macos-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Ajustar pastas para o padrão do Flutter
+        run: |
+          # O projeto iOS veio dentro de "Ios/flutter"; o padrão do Flutter é
+          # uma pasta chamada "ios" na raiz.
+          if [ -d Ios/flutter ]; then
+            mv Ios _ponte_ios_tmp
+            mv _ponte_ios_tmp/flutter ios
+            rm -rf _ponte_ios_tmp
+          elif [ -d Ios ]; then
+            mv Ios ios
+          fi
+
+          # Nomes internos no padrão do Xcode (maiúsculas corretas)
+          [ -d ios/runner ] && mv ios/runner ios/Runner || true
+          [ -d ios/runnertest ] && mv ios/runnertest ios/RunnerTests || true
+          [ -d ios/flutter ] && mv ios/flutter ios/Flutter || true
+
+          # Pastas do código Dart no singular -> plural (como os imports usam)
+          [ -d lib/service ] && mv lib/service lib/services || true
+          [ -d lib/screen ] && mv lib/screen lib/screens || true
+
+          echo '--- estrutura final ---'
+          ls
+          ls ios ios/Flutter ios/Runner
+
+      - name: Criar ios/Podfile (padrão do Flutter 3.24)
+        run: |
+          cat > ios/Podfile <<'EOF'
+          # Uncomment this line to define a global platform for your project
+          # platform :ios, '12.0'
+
+          # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+          ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+          project 'Runner', {
+            'Debug' => :debug,
+            'Profile' => :release,
+            'Release' => :release,
+          }
+
+          def flutter_root
+            generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+            unless File.exist?(generated_xcode_build_settings_path)
+              raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+            end
+
+            File.foreach(generated_xcode_build_settings_path) do |line|
+              matches = line.match(/FLUTTER_ROOT\=(.*)/)
+              return matches[1].strip if matches
+            end
+            raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+          end
+
+          require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+          flutter_ios_podfile_setup
+
+          target 'Runner' do
+            use_frameworks!
+
+            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+            target 'RunnerTests' do
+              inherit! :search_paths
+            end
+          end
+
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
+            end
+          end
+          EOF
+
+      - name: Instalar Flutter 3.24.5
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.24.5
+          cache: true
+
+      - name: Baixar dependências do Dart
+        run: flutter pub get
+
+      - name: Compilar app iOS (sem assinatura)
+        run: flutter build ios --release --no-codesign
+
+      - name: Empacotar app (.zip para sideload)
+        run: |
+          mkdir -p build/ios_payload/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios_payload/Payload/
+          cd build/ios_payload
+          zip -qry ../Ponte-iOS-sem-assinatura.zip Payload
+          cd ../..
+          ls -lh Ponte-iOS-sem-assinatura.zip
+
+      - name: Publicar app iOS para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ponte-iOS-sem-assinatura
+          path: Ponte-iOS-sem-assinatura.zip
