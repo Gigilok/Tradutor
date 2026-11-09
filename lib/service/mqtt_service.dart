@@ -654,4 +654,6 @@ class PonteNet {
   String _newId(String prefix) {
     final random = Random.secure();
     return '$prefix${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}'
-        '${random.nextInt(1296).toRadixSt
+        '${random.nextInt(1296).toRadixString(36)}';
+  }
+}
