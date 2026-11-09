@@ -1,4 +1,5 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../config.dart';
@@ -15,6 +16,7 @@ class MessageBubble extends StatelessWidget {
     this.translating = false,
     this.translationFailed = false,
     this.onRetryTranslation,
+    this.imagePath,
     this.onOpenImage,
   });
 
@@ -24,6 +26,7 @@ class MessageBubble extends StatelessWidget {
   final bool translating;
   final bool translationFailed;
   final VoidCallback? onRetryTranslation;
+  final String? imagePath;
   final VoidCallback? onOpenImage;
 
   @override
@@ -82,7 +85,7 @@ class MessageBubble extends StatelessWidget {
                   ),
                 ),
               ),
-            if (message.isImage && message.imageUrl != null) _imagePart(),
+            if (message.isImage && imagePath != null) _imagePart(),
             if (message.original.isNotEmpty) ...[
               _label(
                 '${AppConfig.languageName(message.senderLang)} · original',
@@ -122,19 +125,24 @@ class MessageBubble extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 260, maxHeight: 320),
-            child: CachedNetworkImage(
-              imageUrl: message.imageUrl!,
+            child: Image.file(
+              File(imagePath!),
               fit: BoxFit.cover,
-              placeholder: (_, __) => const SizedBox(
+              errorBuilder: (_, __, ___) => Container(
                 width: 160,
-                height: 160,
-                child: Center(child: CircularProgressIndicator()),
-              ),
-              errorWidget: (_, __, ___) => Container(
-                width: 160,
-                height: 100,
+                height: 120,
                 color: Colors.black26,
-                child: const Icon(Icons.broken_image_outlined),
+                child: const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(strokeWidth: 2),
+                    SizedBox(height: 6),
+                    Text(
+                      'foto chegando...',
+                      style: TextStyle(fontSize: 11, color: Colors.white54),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
