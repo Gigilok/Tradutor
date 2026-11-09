@@ -1,22 +1,24 @@
-/// Configuração do app — É AQUI que você cola as credenciais do Supabase.
+/// Configuração do app — já vem PRONTA, não precisa colar nada.
 ///
-/// Siga o passo a passo do README.md (seção "Passo 1 — Criar o banco no Supabase")
-/// e cole abaixo a URL e a chave anônima (anon key) do seu projeto.
+/// A conversa usa um servidor público e gratuito da EMQX
+/// (broker.emqx.io) pelo protocolo MQTT. Não precisa de conta,
+/// não precisa de chave, não paga nada. O app conecta sozinho.
 class AppConfig {
-  /// Exemplo: 'https://abcdefgh.supabase.co'
-  static const String supabaseUrl = 'COLE_AQUI_A_URL_DO_SUPABASE';
+  /// Endereço do servidor público (MQTT, sem cadastro).
+  static const String mqttHost = 'broker.emqx.io';
 
-  /// Exemplo: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
-  /// (Settings > API > Project API keys > anon / public)
-  static const String supabaseAnonKey = 'COLE_AQUI_A_CHAVE_ANON';
+  /// Porta principal (TCP puro).
+  static const int mqttPort = 1883;
+
+  /// Porta reserva usada se a principal estiver bloqueada
+  /// (WebSocket seguro — funciona em quase qualquer rede).
+  static const int mqttPortWebsocket = 8084;
+
+  /// Prefixo dos "tópicos" (canais) da conversa.
+  static const String topicBase = 'ponte';
 
   /// Nome exibido do app.
   static const String appName = 'Ponte';
-
-  /// Retorna true quando as credenciais já foram preenchidas.
-  static bool get isConfigured =>
-      !supabaseUrl.contains('COLE_AQUI') &&
-      !supabaseAnonKey.contains('COLE_AQUI');
 
   /// Idiomas disponíveis no app (código -> nome exibido).
   static const Map<String, String> languages = {
@@ -43,7 +45,4 @@ class AppConfig {
 
   /// Nome do idioma a partir do código.
   static String languageName(String code) => languages[code] ?? code;
-
-  /// Bucket de fotos no Supabase Storage (criado pelo script supabase/setup.sql).
-  static const String photoBucket = 'fotos';
 }
