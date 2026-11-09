@@ -27,6 +27,17 @@ class PresenceInfo {
   DateTime lastSeen;
 }
 
+/// As três vias de conexão com o servidor, na ordem de tentativa.
+/// Se uma porta estiver bloqueada na rede, a próxima é tentada.
+enum _Via {
+  direta('direta (porta 1883)'),
+  segura('segura/TLS (porta 8883)'),
+  web('web/WSS (porta 8084)');
+
+  const _Via(this.label);
+  final String label;
+}
+
 /// Conexão com o servidor público gratuito (broker.emqx.io, protocolo MQTT).
 ///
 /// Não precisa de conta nem de chave: o app conecta sozinho e usa "tópicos"
@@ -92,6 +103,11 @@ class PonteNet {
   // -------------------------------------------------------------------------
 
   /// Conecta na sala. Já é chamado pelo AppState ao entrar.
+  ///
+  /// Tenta as TRÊS vias de conexão na ordem: direta (1883), segura (8883,
+  /// TLS) e web (8084, WebSocket seguro — passa por quase qualquer rede,
+  /// pois é a mesma porta dos sites com HTTPS). A primeira que funcionar
+  /// é usada; as outras duas são tentadas só se a anterior falhar.
   Future<void> connect({
     required String roomCode,
     required String name,
@@ -110,34 +126,59 @@ class PonteNet {
     await _teardown();
     _room = roomCode;
     _connecting = true;
-    _connected = Completer<void>();
+    final falhas = <String>[];
     try {
-      await _startClient(useWebsocket: false);
-    } catch (_) {
-      // A rede pode estar bloqueando a porta padrão: tenta a reserva (wss).
-      await _teardown();
-      _connected = Completer<void>();
-      try {
-        await _startClient(useWebsocket: true);
-      } catch (error) {
-        _connecting = false;
-        throw Exception(
-          'Não consegui falar com o servidor ($error). Verifique a internet.',
-        );
+      for (final via in _Via.values) {
+        _connected = Completer<void>();
+        try {
+          await _startClient(via);
+          return; // essa via funcionou: segue o jogo
+        } catch (_) {
+          falhas.add(via.label);
+          // A rede pode estar bloqueando essa porta: tenta a próxima via.
+          await _teardown();
+        }
       }
+      throw Exception(
+        'Não consegui falar com o servidor por nenhuma via '
+        '(${falhas.join(', ')}). Sua internet pode estar bloqueando as '
+        'portas do chat — tente trocar do Wi-Fi para os dados móveis '
+        '(ou o contrário) e entre de novo.',
+      );
+    } finally {
+      _connecting = false;
     }
-    _connecting = false;
   }
 
-  Future<void> _startClient({required bool useWebsocket}) async {
-    final port = useWebsocket
-        ? AppConfig.mqttPortWebsocket
-        : AppConfig.mqttPort;
-    final client = MqttServerClient.withPort(
-      AppConfig.mqttHost,
-      _clientId,
-      port,
-    );
+  Future<void> _startClient(_Via via) async {
+    final MqttServerClient client;
+    switch (via) {
+      case _Via.direta:
+        client = MqttServerClient.withPort(
+          AppConfig.mqttHost,
+          _clientId,
+          AppConfig.mqttPort,
+          maxConnectionAttempts: 1,
+        );
+      case _Via.segura:
+        client = MqttServerClient.withPort(
+          AppConfig.mqttHost,
+          _clientId,
+          AppConfig.mqttPortTls,
+          maxConnectionAttempts: 1,
+        );
+        client.secure = true;
+      case _Via.web:
+        // No modo WebSocket o pacote exige a URL completa (wss://.../mqtt),
+        // não só o host — por isso usamos mqttUrlWebsocket.
+        client = MqttServerClient.withPort(
+          AppConfig.mqttUrlWebsocket,
+          _clientId,
+          AppConfig.mqttPortWebsocket,
+          maxConnectionAttempts: 1,
+        );
+        client.useWebSocket = true;
+    }
     _client = client;
     client.logging(on: false);
     client.keepAlivePeriod = 30;
@@ -163,9 +204,11 @@ class PonteNet {
         .startClean();
 
     client.updates!.listen(_onArrived);
-    await client.connect().timeout(const Duration(seconds: 25));
+    // Limite de tempo POR VIA: se a rede "engoliu" a porta (nem aceita nem
+    // recusa), não podemos ficar presos — a próxima via resolve.
+    await client.connect().timeout(const Duration(seconds: 15));
     if (client.connectionStatus?.state != MqttConnectionState.connected) {
-      throw Exception('o servidor não respondeu');
+      throw Exception('o servidor não respondeu pela via ${via.label}');
     }
   }
 
