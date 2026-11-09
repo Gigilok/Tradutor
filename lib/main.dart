@@ -1,21 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
 import 'screens/home_screen.dart';
 import 'screens/join_screen.dart';
-import 'screens/setup_screen.dart';
 import 'services/app_state.dart';
+import 'services/photos.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final state = AppState();
 
-  if (AppConfig.isConfigured) {
-    await SupabaseInit.ensureInitialized();
-  }
+  // Pasta onde as fotos recebidas são guardadas.
+  await PhotoStore.init();
   await state.load();
 
   runApp(
@@ -26,20 +24,6 @@ Future<void> main() async {
       child: const PonteApp(),
     ),
   );
-}
-
-/// Inicializa o Supabase apenas quando as credenciais estão preenchidas.
-class SupabaseInit {
-  static bool _done = false;
-
-  static Future<void> ensureInitialized() async {
-    if (_done) return;
-    await Supabase.initialize(
-      url: AppConfig.supabaseUrl,
-      publishableKey: AppConfig.supabaseAnonKey,
-    );
-    _done = true;
-  }
 }
 
 class PonteApp extends StatelessWidget {
@@ -117,17 +101,14 @@ class PonteApp extends StatelessWidget {
   }
 }
 
-/// Decide a primeira tela: instruções (sem Supabase configurado),
-/// entrada na sala ou direto para a conversa.
+/// Decide a primeira tela: se o perfil já foi preenchido uma vez,
+/// abre direto na conversa. Só na primeira abertura pede nome/idioma.
 class AppEntry extends StatelessWidget {
   const AppEntry({super.key});
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    if (!AppConfig.isConfigured) {
-      return const SetupScreen();
-    }
     return state.isLoggedIn ? const HomeScreen() : const JoinScreen();
   }
 }
