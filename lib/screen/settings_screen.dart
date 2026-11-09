@@ -52,7 +52,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('Sair da sala?'),
         content: const Text(
           'Você voltará para a tela de entrada e poderá criar uma nova '
-          'sala ou entrar com outro código. As mensagens continuam salvas.',
+          'sala ou entrar com outro código. As mensagens recentes da '
+          'sala ficam guardadas no servidor público dela.',
         ),
         actions: [
           TextButton(
