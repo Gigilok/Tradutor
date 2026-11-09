@@ -31,6 +31,17 @@ jobs:
           # Pasta "Java" com maiúscula -> "java"
           [ -d android/app/src/main/Java ] && [ ! -d android/app/src/main/java ] && mv android/app/src/main/Java android/app/src/main/java || true
 
+          # ------------------------------------------------------------
+          # Apagar arquivos que NÃO são usados pelo app:
+          # - supabase/ : resto do servidor antigo (hoje é broker.emqx.io)
+          # - Vazio e Vazio1 : arquivos sem conteúdo
+          # - setup_screen.dart : tela antiga de configurar Supabase,
+          #   já não é usada por nenhuma tela
+          rm -rf supabase
+          rm -f Vazio Vazio1
+          rm -f lib/screens/setup_screen.dart
+          # ------------------------------------------------------------
+
           echo '--- estrutura final ---'
           ls
           ls lib lib/services lib/screens
@@ -70,19 +81,6 @@ jobs:
           channel: stable
           flutter-version: 3.24.5
           cache: true
-
-      - name: Corrigir app_links (incompatível com Flutter 3.24)
-        run: |
-          # O lock do repositório fixa app_links 6.4.1, cujo build.gradle usa
-          # "flutter.compileSdkVersion" sem aplicar o plugin do Flutter — isso
-          # quebra o Gradle do Flutter 3.24.5. Fixamos a 6.3.3 (compileSdk fixo),
-          # versão aceita pelo supabase_flutter (>=6.2.0 <8.0.0).
-          cat >> pubspec.yaml <<'EOF'
-
-          # Compatibilidade com Flutter 3.24.5 (adicionado pelo workflow)
-          dependency_overrides:
-            app_links: 6.3.3
-          EOF
 
       - name: Baixar dependências do Dart
         run: flutter pub get
@@ -124,6 +122,14 @@ jobs:
           # Pastas do código Dart no singular -> plural (como os imports usam)
           [ -d lib/service ] && mv lib/service lib/services || true
           [ -d lib/screen ] && mv lib/screen lib/screens || true
+
+          # ------------------------------------------------------------
+          # Apagar arquivos que NÃO são usados pelo app (mesma limpeza
+          # do Android): resto do Supabase e arquivos vazios.
+          rm -rf supabase
+          rm -f Vazio Vazio1
+          rm -f lib/screens/setup_screen.dart
+          # ------------------------------------------------------------
 
           echo '--- estrutura final ---'
           ls
