@@ -10,9 +10,15 @@ class AppConfig {
   /// Porta principal (TCP puro).
   static const int mqttPort = 1883;
 
-  /// Porta reserva usada se a principal estiver bloqueada
-  /// (WebSocket seguro — funciona em quase qualquer rede).
+  /// Porta reserva com criptografia (TLS), usada se a principal falhar
+  /// (algumas redes de celular e Wi-Fi bloqueiam a 1883).
+  static const int mqttPortTls = 8883;
+
+  /// Última reserva: WebSocket seguro (WSS), que passa por quase qualquer
+  /// rede porque usa a mesma porta dos sites com HTTPS. O pacote MQTT
+  /// exige a URL completa (com o caminho /mqtt) nesse modo.
   static const int mqttPortWebsocket = 8084;
+  static const String mqttUrlWebsocket = 'wss://broker.emqx.io/mqtt';
 
   /// Prefixo dos "tópicos" (canais) da conversa.
   static const String topicBase = 'ponte';
