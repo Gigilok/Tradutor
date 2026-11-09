@@ -8,6 +8,7 @@ import '../config.dart';
 import '../models.dart';
 import '../services/app_state.dart';
 import '../services/chat_service.dart';
+import '../services/photos.dart';
 import '../services/translation.dart';
 import '../widgets/message_bubble.dart';
 import 'photo_view_screen.dart';
@@ -35,15 +36,22 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _loading = true;
   String? _otherLang;
   bool _sendingPhoto = false;
+  Set<String> _online = {};
+  DateTime? _lastSeen;
+  String? _friendName;
 
   @override
   void initState() {
     super.initState();
+    _chat.onPhotosChanged = () {
+      if (mounted) setState(() {});
+    };
     _start();
   }
 
   @override
   void dispose() {
+    _chat.onPhotosChanged = null;
     _chat.unsubscribe();
     _input.dispose();
     _scroll.dispose();
@@ -62,10 +70,31 @@ class _ChatScreenState extends State<ChatScreen> {
       _translatePending();
       _chat.subscribeMessages(state.roomId, (message) {
         if (!mounted) return;
+        // O servidor pode repetir uma mensagem (histórico + ao vivo):
+        // evita bolha duplicada.
+        if (_messages.any((m) => m.id == message.id)) return;
         setState(() => _messages.add(message));
         _scrollToBottom();
         _translatePending();
       });
+      // Presença: mostra no topo se a amiga está online agora e,
+      // se não estiver, quando foi vista por último.
+      _chat.subscribePresence(
+        roomId: state.roomId,
+        myName: state.name,
+        onOthersOnline: (names) {
+          if (!mounted) return;
+          setState(() => _online = names);
+        },
+        onOtherLastSeen: (lastSeen) {
+          if (!mounted) return;
+          final friend = _chat.friendPresence(state.name);
+          setState(() {
+            _lastSeen = lastSeen;
+            _friendName = friend?.name ?? _friendName;
+          });
+        },
+      );
       final other = await _chat.otherLanguage(state.roomId, state.name);
       if (mounted && other != null) {
         setState(() => _otherLang = other);
@@ -319,6 +348,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                _statusBanner(state),
                 Expanded(
                   child: _messages.isEmpty
                       ? const Center(
@@ -358,16 +388,12 @@ class _ChatScreenState extends State<ChatScreen> {
                               translationFailed: _failed.contains(message.id),
                               onRetryTranslation: () =>
                                   _retryTranslation(message),
-                              onOpenImage: message.imageUrl == null
+                              imagePath: message.photoId == null
                                   ? null
-                                  : () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute<void>(
-                                          builder: (_) => PhotoViewScreen(
-                                            imageUrl: message.imageUrl!,
-                                          ),
-                                        ),
-                                      ),
+                                  : PhotoStore.pathFor(message.photoId!),
+                              onOpenImage: message.photoId == null
+                                  ? null
+                                  : () => _openPhoto(message.photoId!),
                             );
                           },
                         ),
@@ -432,6 +458,75 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ],
             ),
+    );
+  }
+
+  /// Faixa no topo do chat: amiga online agora ou vista por último.
+  Widget _statusBanner(AppState state) {
+    final friend = _chat.friendPresence(state.name);
+    final online = _online.isNotEmpty;
+    final friendName = friend?.name ?? _friendName ?? 'Sua amiga';
+    final label = online
+        ? '$friendName está online agora'
+        : _lastSeen != null
+            ? '$friendName vista por último às ${_formatHm(_lastSeen!)}'
+            : 'Esperando $friendName entrar...';
+    return Container(
+      width: double.infinity,
+      color: online
+          ? Colors.greenAccent.withOpacity(0.10)
+          : Colors.white.withOpacity(0.04),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      child: Row(
+        children: [
+          Container(
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: online ? Colors.greenAccent : Colors.white24,
+              boxShadow: online
+                  ? [
+                      BoxShadow(
+                        color: Colors.greenAccent.withOpacity(0.55),
+                        blurRadius: 6,
+                      ),
+                    ]
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: online ? Colors.greenAccent : Colors.white38,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatHm(DateTime time) {
+    final hh = time.hour.toString().padLeft(2, '0');
+    final mm = time.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  void _openPhoto(String photoId) {
+    final path = PhotoStore.pathFor(photoId);
+    if (path == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => PhotoViewScreen(imagePath: path),
+      ),
     );
   }
 
