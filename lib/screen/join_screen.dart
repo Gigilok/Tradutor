@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import '../config.dart';
 import '../services/app_state.dart';
 
-/// Primeira tela: escolhe nome, idioma e cria/entra em uma sala.
+/// Primeira tela (só na primeira vez que abre o app):
+/// escolhe nome, idioma e o código da sala combinado com a amiga.
+/// O servidor já vem configurado dentro do app — não pede conta nem chave.
 class JoinScreen extends StatefulWidget {
   const JoinScreen({super.key});
 
@@ -30,6 +32,10 @@ class _JoinScreenState extends State<JoinScreen> {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       _showError('Digite o seu nome.');
+      return;
+    }
+    if (!createNew && _codeController.text.trim().length < 4) {
+      _showError('Digite o código de 4 caracteres combinado com a sua amiga.');
       return;
     }
     setState(() => _busy = true);
@@ -82,14 +88,15 @@ class _JoinScreenState extends State<JoinScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Conversem cada um no seu idioma — o app traduz,\n'
-                    'guarda as duas versões e ainda tem filmes com legendas.',
+                    'Tudo pronto! Só falta você escolher o seu nome e idioma.\n'
+                    'Depois combine com a sua amiga um código e as duas\n'
+                    'entram com o mesmo código para conversar.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Colors.white70,
                         ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 28),
                   TextField(
                     controller: _nameController,
                     textCapitalization: TextCapitalization.words,
@@ -117,11 +124,11 @@ class _JoinScreenState extends State<JoinScreen> {
                       if (value != null) setState(() => _lang = value);
                     },
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 24),
                   FilledButton.icon(
                     onPressed: _busy ? null : () => _submit(createNew: true),
                     icon: const Icon(Icons.add_link),
-                    label: const Text('Criar nova sala'),
+                    label: const Text('Criar sala (gera um código)'),
                   ),
                   const SizedBox(height: 14),
                   Row(
@@ -130,7 +137,7 @@ class _JoinScreenState extends State<JoinScreen> {
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
-                          'ou entre com um código',
+                          'ou entre com o código',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
@@ -150,8 +157,8 @@ class _JoinScreenState extends State<JoinScreen> {
                     ),
                     decoration: const InputDecoration(
                       counterText: '',
-                      hintText: 'ABCD',
-                      labelText: 'Código da sala',
+                      hintText: 'K7PD',
+                      labelText: 'Código combinado com a amiga',
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -159,6 +166,15 @@ class _JoinScreenState extends State<JoinScreen> {
                     onPressed: _busy ? null : () => _submit(createNew: false),
                     icon: const Icon(Icons.meeting_room_outlined),
                     label: const Text('Entrar na sala'),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'O app usa um servidor público gratuito (broker.emqx.io) — '
+                    'não precisa criar conta.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.white38,
+                        ),
                   ),
                 ],
               ),
