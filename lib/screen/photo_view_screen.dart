@@ -1,11 +1,13 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 /// Tela cheia para ver a foto do chat com zoom e arrastar.
+/// A foto fica guardada no próprio aparelho (chegou pelo servidor).
 class PhotoViewScreen extends StatelessWidget {
-  const PhotoViewScreen({super.key, required this.imageUrl});
+  const PhotoViewScreen({super.key, required this.imagePath});
 
-  final String imageUrl;
+  final String imagePath;
 
   @override
   Widget build(BuildContext context) {
@@ -21,13 +23,11 @@ class PhotoViewScreen extends StatelessWidget {
           minScale: 0.5,
           maxScale: 4,
           child: Hero(
-            tag: imageUrl,
-            child: CachedNetworkImage(
-              imageUrl: imageUrl,
+            tag: imagePath,
+            child: Image.file(
+              File(imagePath),
               fit: BoxFit.contain,
-              placeholder: (_, __) =>
-                  const Center(child: CircularProgressIndicator()),
-              errorWidget: (_, __, ___) => const Icon(
+              errorBuilder: (_, __, ___) => const Icon(
                 Icons.broken_image_outlined,
                 size: 64,
                 color: Colors.white24,
