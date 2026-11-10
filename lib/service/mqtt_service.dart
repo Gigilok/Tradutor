@@ -203,9 +203,14 @@ class PonteNet {
         .withWillQos(MqttQos.atLeastOnce)
         .startClean();
 
-    client.updates!.listen(_onArrived);
-    // Limite de tempo POR VIA: se a rede "engoliu" a porta (nem aceita nem
-    // recusa), não podemos ficar presos — a próxima via resolve.
+    // IMPORTANTE: client.updates só existe DEPOIS que connect() é chamado
+    // (ele vem do subscriptionsManager, que é criado dentro de connect()).
+    // Se chamarmos .updates!.listen() ANTES do connect(), o ! explode com
+    // "Null check operator used on a null value" e derruba a via inteira —
+    // exatamente o bug que impedia o app de conectar em qualquer rede.
+    // O listener é registrado em _onConnected (logo abaixo), que roda
+    // DEPOIS do subscriptionsManager estar pronto e ANTES dos subscribes,
+    // garantindo que nenhuma mensagem chegue sem listener.
     await client.connect().timeout(const Duration(seconds: 15));
     if (client.connectionStatus?.state != MqttConnectionState.connected) {
       throw Exception('o servidor não respondeu pela via ${via.label}');
@@ -257,6 +262,12 @@ class PonteNet {
   void _onConnected() {
     final client = _client;
     if (client == null) return;
+    // Registramos o listener AQUI (e não antes do connect) porque
+    // client.updates só deixa de ser null depois que o connect()
+    // cria o subscriptionsManager. Fazemos isso ANTES dos subscribes
+    // para garantir que nenhuma mensagem (especialmente as retained
+    // do histórico e status) chegue sem listener e seja perdida.
+    client.updates!.listen(_onArrived);
     client.subscribe(_topic('msg'), MqttQos.atLeastOnce);
     client.subscribe('${_topic('hist')}/#', MqttQos.atLeastOnce);
     client.subscribe('${_topic('foto')}/#', MqttQos.atLeastOnce);
