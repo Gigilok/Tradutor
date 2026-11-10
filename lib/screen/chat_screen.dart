@@ -6,10 +6,10 @@ import 'package:provider/provider.dart';
 
 import '../config.dart';
 import '../models.dart';
-import '../services/app_state.dart';
-import '../services/chat_service.dart';
-import '../services/photos.dart';
-import '../services/translation.dart';
+import '../service/app_state.dart';
+import '../service/chat_service.dart';
+import '../service/photos.dart';
+import '../service/translation.dart';
 import '../widgets/message_bubble.dart';
 import 'photo_view_screen.dart';
 
