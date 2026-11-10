@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config.dart';
-import '../services/app_state.dart';
+import '../service/app_state.dart';
 
 /// Primeira tela (só na primeira vez que abre o app):
 /// escolhe nome, idioma e o código da sala combinado com a amiga.
