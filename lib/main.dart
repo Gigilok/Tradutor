@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'config.dart';
-import 'screen/home_screen.dart';
-import 'screen/join_screen.dart';
-import 'service/app_state.dart';
-import 'service/photos.dart';
+import 'screens/home_screen.dart';
+import 'screens/join_screen.dart';
+import 'services/app_state.dart';
+import 'services/photos.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
