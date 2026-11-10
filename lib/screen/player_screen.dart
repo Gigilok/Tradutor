@@ -9,9 +9,9 @@ import 'package:video_player/video_player.dart';
 
 import '../config.dart';
 import '../models.dart';
-import '../service/app_state.dart';
-import '../service/movie_service.dart';
-import '../service/subtitles.dart';
+import '../services/app_state.dart';
+import '../services/movie_service.dart';
+import '../services/subtitles.dart';
 
 /// Player de filme com legendas (.srt/.vtt) traduzidas e modo
 /// "assistir junto" (quem controla comanda a reprodução dos dois).
