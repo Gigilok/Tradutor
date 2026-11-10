@@ -6,8 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../models.dart';
-import '../services/app_state.dart';
-import '../services/movie_service.dart';
+import '../service/app_state.dart';
+import '../service/movie_service.dart';
 import 'player_screen.dart';
 
 /// Lista de filmes da sala. Permite adicionar por LINK (mp4/m3u8)
