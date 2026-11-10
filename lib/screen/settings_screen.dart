@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../config.dart';
-import '../services/app_state.dart';
+import '../service/app_state.dart';
 import 'join_screen.dart';
 
 /// Ajustes: nome, idioma, código da sala e sair da sala.
