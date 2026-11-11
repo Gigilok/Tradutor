@@ -37,9 +37,14 @@ class PhotoStore {
     _basePath ??= fotos.path;
     final path = pathFor(photoId) ?? '${fotos.path}/$photoId.jpg';
     final file = File(path);
-    if (!file.existsSync()) {
-      await file.writeAsBytes(bytes, flush: true);
-    }
+    // >>> CORREÇÃO #18: removido o check `if (!file.existsSync())`.
+    // Antes, se duas mensagens com o mesmo photoId chegassem
+    // simultaneamente, ambas faziam existsSync() antes de qualquer
+    // uma escrever → ambas tentavam escrever no mesmo arquivo →
+    // corrida que podia corromper o JPEG. Agora sempre escreve
+    // (FileMode.write por padrão sobrescreve se existir, cria se não).
+    // Para o caso normal (foto nova) é idempotente.
+    await file.writeAsBytes(bytes, flush: true);
     return path;
   }
 }
