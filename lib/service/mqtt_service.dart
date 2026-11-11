@@ -73,6 +73,17 @@ class PonteNet {
   DateTime? _histDeadline;
   DateTime? _moviesDeadline;
 
+  // >>> CORREÇÃO #4: manter o último PlaybackState recebido em memória,
+  // para que loadPlayback() possa restaurar o estado quando a tela do
+  // player abre (antes sempre retornava null e quem abria depois
+  // 'assumia' o controle silenciosamente, derrubando quem já assistia).
+  PlaybackState? _lastPlayback;
+
+  // >>> CORREÇÃO #8: flag para evitar subscribes duplicados quando o
+  // mqtt_client reconecta sozinho (autoReconnect=true). Sem isso,
+  // _onConnected roda de novo e faz 6 subscribes extras a cada reconexão.
+  bool _subscribed = false;
+
   // callbacks usados pelas telas (via ChatService / MovieService)
   void Function(Message message)? onMessage;
   void Function()? onPresenceChanged;
@@ -203,14 +214,14 @@ class PonteNet {
         .withWillQos(MqttQos.atLeastOnce)
         .startClean();
 
-    // IMPORTANTE: client.updates só existe DEPOIS que connect() é chamado
-    // (ele vem do subscriptionsManager, que é criado dentro de connect()).
-    // Se chamarmos .updates!.listen() ANTES do connect(), o ! explode com
-    // "Null check operator used on a null value" e derruba a via inteira —
-    // exatamente o bug que impedia o app de conectar em qualquer rede.
-    // O listener é registrado em _onConnected (logo abaixo), que roda
-    // DEPOIS do subscriptionsManager estar pronto e ANTES dos subscribes,
-    // garantindo que nenhuma mensagem chegue sem listener.
+    // >>> CORREÇÃO CRÍTICA: NÃO chamar client.updates!.listen() aqui!
+    // O campo `updates` vem de `subscriptionsManager`, que só é criado
+    // DENTRO de connect(). Antes do connect() ele é null e o `!` explode
+    // com "Null check operator used on a null value", derrubando TODAS
+    // as 3 vias antes mesmo de abrir o socket. Era esse o bug que
+    // impedia o app de conectar em qualquer rede.
+    // O listener agora é registrado em _onConnected (depois do connect,
+    // antes dos subscribes) — ver abaixo.
     await client.connect().timeout(const Duration(seconds: 15));
     if (client.connectionStatus?.state != MqttConnectionState.connected) {
       throw Exception('o servidor não respondeu pela via ${via.label}');
@@ -221,6 +232,9 @@ class PonteNet {
     _heartbeat?.cancel();
     _heartbeat = null;
     _connected = null;
+    // >>> CORREÇÃO #8: resetar flag de subscribed para a próxima conexão
+    // recriar os subscribes do zero.
+    _subscribed = false;
     final client = _client;
     _client = null;
     if (client == null) return;
@@ -257,30 +271,40 @@ class PonteNet {
     _myPhotoIds.clear();
     _histDeadline = null;
     _moviesDeadline = null;
+    // >>> CORREÇÃO #4: limpar o último estado de reprodução ao sair.
+    _lastPlayback = null;
   }
 
   void _onConnected() {
     final client = _client;
     if (client == null) return;
-    // Registramos o listener AQUI (e não antes do connect) porque
-    // client.updates só deixa de ser null depois que o connect()
-    // cria o subscriptionsManager. Fazemos isso ANTES dos subscribes
-    // para garantir que nenhuma mensagem (especialmente as retained
-    // do histórico e status) chegue sem listener e seja perdida.
+    // >>> CORREÇÃO CRÍTICA: registrar o listener AQUI, depois do connect()
+    // (que cria o subscriptionsManager e faz `updates` deixar de ser null)
+    // mas ANTES dos subscribes, para que nenhuma mensagem (especialmente
+    // as retained de histórico e status) chegue sem listener e seja
+    // perdida. O stream updates é broadcast(sync=true), então sem
+    // listener ativo a mensagem é descartada.
     client.updates!.listen(_onArrived);
-    client.subscribe(_topic('msg'), MqttQos.atLeastOnce);
-    client.subscribe('${_topic('hist')}/#', MqttQos.atLeastOnce);
-    client.subscribe('${_topic('foto')}/#', MqttQos.atLeastOnce);
-    client.subscribe('${_topic('status')}/+', MqttQos.atLeastOnce);
-    client.subscribe('${_topic('movie')}/#', MqttQos.atLeastOnce);
-    client.subscribe(_topic('play'), MqttQos.atLeastOnce);
-
+    // >>> CORREÇÃO #8: só recria subscribes na PRIMEIRA conexão.
+    // Em reconexões automáticas, o mqtt_client já re-subscribe sozinho
+    // (resubscribeOnAutoReconnect=true), então pular evita duplicação.
+    if (!_subscribed) {
+      client.subscribe(_topic('msg'), MqttQos.atLeastOnce);
+      client.subscribe('${_topic('hist')}/#', MqttQos.atLeastOnce);
+      client.subscribe('${_topic('foto')}/#', MqttQos.atLeastOnce);
+      client.subscribe('${_topic('status')}/+', MqttQos.atLeastOnce);
+      client.subscribe('${_topic('movie')}/#', MqttQos.atLeastOnce);
+      client.subscribe(_topic('play'), MqttQos.atLeastOnce);
+      _subscribed = true;
+    }
     _publishStatus(online: true);
     final done = _connected;
     if (done != null && !done.isCompleted) done.complete();
     _heartbeat?.cancel();
+    // >>> CORREÇÃO #9: heartbeat alinhado com o keepAlivePeriod do MQTT
+    // (30s) — antes era 45s e em redes móveis o NAT podia fechar antes.
     _heartbeat = Timer.periodic(
-      const Duration(seconds: 45),
+      const Duration(seconds: 30),
       (_) => _publishStatus(online: true),
     );
   }
@@ -314,10 +338,23 @@ class PonteNet {
         } else if (topic.startsWith('${_topic('movie')}/')) {
           _onMovieJson(json);
         } else if (topic == _topic('play')) {
-          onPlayback?.call(PlaybackState.fromMap(json));
+          final state = PlaybackState.fromMap(json);
+          // >>> CORREÇÃO #4: guardar o último estado de reprodução
+          // recebido para que loadPlayback() possa restaurá-lo quando
+          // a tela do player abre.
+          _lastPlayback = state;
+          onPlayback?.call(state);
         }
-      } catch (_) {
-        // mensagem estranha: ignora
+      } catch (e) {
+        // >>> CORREÇÃO #12: logar em debug em vez de engolir silenciosamente.
+        // Antes, qualquer erro de parse era ignorado — isso escondia bugs
+        // reais (JSON malformado, base64 corrompido) e impedia o usuário
+        // de saber que uma mensagem não chegou.
+        assert(() {
+          // ignore: avoid_print
+          print('[PonteNet] mensagem descartada em $topic: $e');
+          return true;
+        }());
       }
     }
   }
@@ -441,10 +478,21 @@ class PonteNet {
     if (client == null || !isConnected) {
       throw Exception('sem conexão com o servidor');
     }
-    final builder = MqttClientPayloadBuilder();
-    builder.addString(jsonEncode(json));
-    client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!,
-        retain: retain);
+    // >>> CORREÇÃO #7: try/catch em volta da publicação para capturar
+    // exceções de desconexão que podem acontecer entre o check isConnected
+    // e o publishMessage (race condition em redes instáveis).
+    try {
+      final builder = MqttClientPayloadBuilder();
+      builder.addString(jsonEncode(json));
+      final payload = builder.payload;
+      if (payload == null || payload.isEmpty) {
+        throw Exception('payload vazio — falha ao codificar JSON');
+      }
+      client.publishMessage(topic, MqttQos.atLeastOnce, payload, retain: retain);
+    } catch (e) {
+      // Relança com mensagem mais amigável para o usuário.
+      throw Exception('não consegui enviar a mensagem: $e');
+    }
   }
 
   void _publishRaw(String topic, String payload, {bool retain = false}) {
@@ -452,10 +500,18 @@ class PonteNet {
     if (client == null || !isConnected) {
       throw Exception('sem conexão com o servidor');
     }
-    final builder = MqttClientPayloadBuilder();
-    builder.addString(payload);
-    client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!,
-        retain: retain);
+    // >>> CORREÇÃO #7: mesmo try/catch do _publish, por consistência.
+    try {
+      final builder = MqttClientPayloadBuilder();
+      builder.addString(payload);
+      final built = builder.payload;
+      if (built == null || built.isEmpty) {
+        throw Exception('payload vazio');
+      }
+      client.publishMessage(topic, MqttQos.atLeastOnce, built, retain: retain);
+    } catch (e) {
+      throw Exception('não consegui enviar: $e');
+    }
   }
 
   void _clearRetained(String topic) {
@@ -640,6 +696,23 @@ class PonteNet {
       'is_playing': isPlaying,
       'controller': controller,
     });
+    // >>> CORREÇÃO #4: também guardar localmente, para que a própria tela
+    // que publica consiga ler de volta via loadPlayback() se reabrir.
+    _lastPlayback = PlaybackState(
+      movieId: movieId,
+      positionSeconds: positionSeconds,
+      isPlaying: isPlaying,
+      controller: controller,
+    );
+  }
+
+  /// >>> CORREÇÃO #4: retorna o último estado de reprodução recebido
+  /// ou publicado por este cliente. Antes sempre retornava null, o que
+  /// fazia o player_screen nunca conseguir restaurar quem controlava
+  /// quando a tela abria depois — quem abria depois "assumia" o controle
+  /// silenciosamente e derrubava quem já estava assistindo.
+  Future<PlaybackState?> loadPlayback() async {
+    return _lastPlayback;
   }
 
   // -------------------------------------------------------------------------
