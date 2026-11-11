@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network Security Config do app Ponte
+
+  Política padrão: bloqueia todo tráfego em texto puro (cleartext),
+  exigindo HTTPS para tudo. Como exceção, libera APENAS o host do
+  broker MQTT público (broker.emqx.io) na porta 1883 — porque MQTT
+  em TCP puro não usa TLS.
+
+  Isso substitui a flag android:usesCleartextTraffic="true" no
+  AndroidManifest, que era MUITO permissiva (liberava qualquer host
+  em cleartext, vulnerável a MITM e rejeitada pela Play Store sem
+  justificativa técnica).
+
+  Para a porta 8883 (TLS) e 8084 (WSS), nenhum exception é preciso:
+  ambos já são HTTPS-like e passam pela política padrão.
+-->
+<network-security-config>
+    <!-- Bloqueia cleartext por padrão em todo o app -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Exceção: apenas o broker MQTT público na porta 1883 (TCP puro) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">broker.emqx.io</domain>
+    </domain-config>
+</network-security-config>
