@@ -14,16 +14,19 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
 
+    <!--
+      usesCleartextTraffic foi REMOVIDO do <application>.
+      Substituído por networkSecurityConfig abaixo, que libera
+      cleartext APENAS para broker.emqx.io (porta 1883 do MQTT).
+      Todo o resto exige HTTPS, conforme recomendação da Google.
+      Comentários NÃO podem ficar entre atributos de uma mesma tag
+      XML (causa "Error parsing LocalFile"), por isso este aviso
+      está FORA da tag <application>.
+    -->
     <application
         android:label="Ponte"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        <!--
-          usesCleartextTraffic foi REMOVIDO.
-          Substituído por networkSecurityConfig abaixo, que libera
-          cleartext APENAS para broker.emqx.io (porta 1883 do MQTT).
-          Todo o resto exige HTTPS, conforme recomendação da Google.
-        -->
         android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
