@@ -53,7 +53,14 @@ class AppState extends ChangeNotifier {
     await _joinRoom();
   }
 
-  /// Conecta no servidor p煤blico da sala e avisa no chat que voc锚 chegou.
+  /// Conecta no servidor público da sala e avisa no chat que você chegou.
+  ///
+  /// >>> CORREÇÃO #19: removido o idioma da mensagem de sistema exibida.
+  /// Antes era "$name entrou na sala (Português)" — isso vazava o idioma
+  /// do usuário para qualquer pessoa que escutasse o tópico público
+  /// ponte/<sala>/msg no broker.emqx.io. Agora a mensagem só diz que
+  /// entrou; o idioma segue no campo `lang` do JSON (que só as duas
+  /// pessoas da sala sabem decodificar via seu app).
   Future<void> _joinRoom() async {
     await PonteNet.instance.connect(
       roomCode: roomCode,
@@ -65,7 +72,7 @@ class AppState extends ChangeNotifier {
       senderName: 'Ponte',
       senderLang: lang,
       kind: 'system',
-      text: '$name entrou na sala (${AppConfig.languageName(lang)})',
+      text: '$name entrou na sala',
     );
     notifyListeners();
   }
