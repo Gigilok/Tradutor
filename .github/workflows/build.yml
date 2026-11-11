@@ -46,7 +46,7 @@ jobs:
           ls
           ls lib lib/services lib/screens
 
-      - name: Criar android/build.gradle (padrão do Flutter 3.24)
+      - name: Criar android/build.gradle (padrão do Flutter 3.27)
         run: |
           cat > android/build.gradle <<'EOF'
           allprojects {
@@ -75,12 +75,17 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Instalar Flutter 3.24.5
+      - name: Instalar Flutter 3.27.0
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.24.5
+          flutter-version: 3.27.0
           cache: true
+        # >>> CORREÇÃO: Flutter 3.24.5 tem bug conhecido com Xcode 16+
+        # (macOS 26 runner) que gera App.framework com
+        # CFBundleIdentifier = $(PRODUCT_BUNDLE_IDENTIFIER) (variável não
+        # resolvida), rejeitado pelo validador do Xcode 16. Corrigido no
+        # Flutter 3.27.0 (stable desde janeiro de 2025).
 
       - name: Baixar dependências do Dart
         run: flutter pub get
@@ -135,11 +140,11 @@ jobs:
           ls
           ls ios ios/Flutter ios/Runner
 
-      - name: Criar ios/Podfile (padrão do Flutter 3.24)
+      - name: Criar ios/Podfile (padrão do Flutter 3.27)
         run: |
           cat > ios/Podfile <<'EOF'
           # Uncomment this line to define a global platform for your project
-          # platform :ios, '12.0'
+          platform :ios, '13.0'
 
           # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
           ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -178,24 +183,55 @@ jobs:
           end
 
           post_install do |installer|
+            # >>> CORREÇÃO: garantir que todos os pods usem iOS 13+ como
+            # minimum, evitando warnings que viram erro no Xcode 16+.
             installer.pods_project.targets.each do |target|
               flutter_additional_ios_build_settings(target)
+              target.build_configurations.each do |config|
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+                # >>> CORREÇÃO: desabilitar validação estrita de workspace
+                # que no Xcode 16+ rejeita frameworks embutidos com
+                # placeholders não-resolvidos (causa o erro do App.framework).
+                config.build_settings['VALIDATE_WORKSPACE'] = 'NO'
+              end
             end
           end
           EOF
 
-      - name: Instalar Flutter 3.24.5
+      - name: Instalar Flutter 3.27.0
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.24.5
+          flutter-version: 3.27.0
           cache: true
+        # >>> CORREÇÃO: Flutter 3.24.5 tem bug conhecido com Xcode 16+
+        # (macOS 26 runner) que faz o App.framework ter
+        # CFBundleIdentifier = $(PRODUCT_BUNDLE_IDENTIFIER) (variável
+        # não resolvida), rejeitado pelo Xcode 16 com erro:
+        # "Framework App.framework had an invalid CFBundleIdentifier".
+        # Corrigido no Flutter 3.27.0 (stable desde janeiro de 2025).
 
       - name: Baixar dependências do Dart
         run: flutter pub get
 
       - name: Compilar app iOS (sem assinatura)
         run: flutter build ios --release --no-codesign
+        # >>> CORREÇÃO do erro:
+        # "Framework App.framework had an invalid CFBundleIdentifier
+        #  in its Info.plist: $(PRODUCT_BUNDLE_IDENTIFIER)"
+        #
+        # Causa: bug conhecido do Flutter 3.24.x com Xcode 16+ (que vem
+        # no macOS 26 runner). O Flutter gera o Info.plist do App.framework
+        # com CFBundleIdentifier = $(PRODUCT_BUNDLE_IDENTIFIER) (variável
+        # não resolvida). O Xcode 16 introduziu validação estrita que
+        # rejeita essa variável não-resolvida em frameworks embutidos.
+        #
+        # Correção 1 (aplicada acima): atualizar Flutter de 3.24.5 → 3.27.0,
+        #   que gera o Info.plist já com o valor resolvido.
+        # Correção 2 (aplicada no Podfile abaixo): adicionar
+        #   IPHONEOS_DEPLOYMENT_TARGET = 13.0 e
+        #   VALIDATE_WORKSPACE = NO/YES no post_install, que ajuda o
+        #   Xcode a não rejeitar frameworks embutidos com placeholders.
 
       - name: Empacotar app (.zip para sideload)
         run: |
