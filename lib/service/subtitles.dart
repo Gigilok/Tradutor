@@ -83,8 +83,30 @@ class SubtitleService {
 
   /// Baixa uma legenda de uma URL (aceita texto simples; se for um
   /// endereço de vídeo, vai falhar com mensagem clara).
+  ///
+  /// >>> CORREÇÃO #15: valida a URL antes de fazer o GET para evitar SSRF.
+  /// Bloqueia schemes não-HTTP, hosts de rede interna (10.x, 192.168.x,
+  /// 127.x, etc.) e localhost.
   static Future<String> download(String url) async {
-    final response = await http.get(Uri.parse(url)).timeout(
+    final cleanUrl = url.trim();
+    if (cleanUrl.isEmpty) {
+      throw ArgumentError('URL vazia.');
+    }
+    final uri = Uri.tryParse(cleanUrl);
+    if (uri == null || !uri.hasScheme) {
+      throw ArgumentError('URL inválida.');
+    }
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'http' && scheme != 'https') {
+      throw ArgumentError(
+          'Só aceitamos http:// ou https:// (recebido: $scheme).');
+    }
+    if (_isPrivateOrLoopback(uri.host)) {
+      throw ArgumentError(
+          'Não baixamos legendas de rede interna (${uri.host}). '
+          'Use um link público.');
+    }
+    final response = await http.get(uri).timeout(
           const Duration(seconds: 30),
         );
     if (response.statusCode != 200) {
@@ -92,6 +114,26 @@ class SubtitleService {
           'Não consegui baixar a legenda (HTTP ${response.statusCode}).');
     }
     return utf8.decode(response.bodyBytes, allowMalformed: true);
+  }
+
+  /// >>> CORREÇÃO #15: bloqueia hosts de rede interna/loopback.
+  static bool _isPrivateOrLoopback(String host) {
+    if (host.isEmpty || host == 'localhost') return true;
+    final parts = host.split('.');
+    if (parts.length == 4) {
+      final octets = parts.map((p) => int.tryParse(p)).toList();
+      if (octets.every((o) => o != null && o! >= 0 && o <= 255)) {
+        final a = octets[0]!;
+        final b = octets[1]!;
+        if (a == 10) return true;
+        if (a == 172 && b >= 16 && b <= 31) return true;
+        if (a == 192 && b == 168) return true;
+        if (a == 127) return true;
+        if (a == 169 && b == 254) return true;
+        if (a == 0) return true;
+      }
+    }
+    return false;
   }
 
   /// Traduz todas as falas da legenda para o idioma [to],
