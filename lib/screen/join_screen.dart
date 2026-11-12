@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config.dart';
+import '../l10n/strings.dart';
 import '../services/app_state.dart';
 
 /// Primeira tela (só na primeira vez que abre o app):
@@ -31,11 +32,11 @@ class _JoinScreenState extends State<JoinScreen> {
     final state = context.read<AppState>();
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      _showError('Digite o seu nome.');
+      _showError(AppStrings.t(context, 'join.need_name'));
       return;
     }
     if (!createNew && _codeController.text.trim().length < 4) {
-      _showError('Digite o código de 4 caracteres combinado com a sua amiga.');
+      _showError(AppStrings.t(context, 'join.need_code'));
       return;
     }
     setState(() => _busy = true);
@@ -49,7 +50,8 @@ class _JoinScreenState extends State<JoinScreen> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Sala ${state.roomCode} pronta!')),
+        SnackBar(content: Text(
+          AppStrings.t(context, 'join.room_ready').format({'code': state.roomCode}))),
       );
     } catch (error) {
       _showError(error.toString().replaceFirst('Exception: ', ''));
@@ -80,7 +82,7 @@ class _JoinScreenState extends State<JoinScreen> {
                   Icon(Icons.route_rounded, size: 64, color: scheme.primary),
                   const SizedBox(height: 12),
                   Text(
-                    AppConfig.appName,
+                    AppStrings.t(context, 'join.app_name'),
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                           fontWeight: FontWeight.bold,
@@ -88,9 +90,7 @@ class _JoinScreenState extends State<JoinScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Tudo pronto! Só falta você escolher o seu nome e idioma.\n'
-                    'Depois combine com a sua amiga um código e as duas\n'
-                    'entram com o mesmo código para conversar.',
+                    AppStrings.t(context, 'join.subtitle'),
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Colors.white70,
@@ -100,17 +100,17 @@ class _JoinScreenState extends State<JoinScreen> {
                   TextField(
                     controller: _nameController,
                     textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(
-                      labelText: 'Seu nome',
-                      prefixIcon: Icon(Icons.person_outline),
+                    decoration: InputDecoration(
+                      labelText: AppStrings.t(context, 'join.name_label'),
+                      prefixIcon: const Icon(Icons.person_outline),
                     ),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: _lang,
-                    decoration: const InputDecoration(
-                      labelText: 'Você fala qual idioma?',
-                      prefixIcon: Icon(Icons.translate),
+                    decoration: InputDecoration(
+                      labelText: AppStrings.t(context, 'join.lang_label'),
+                      prefixIcon: const Icon(Icons.translate),
                     ),
                     items: AppConfig.languages.entries
                         .map(
@@ -128,7 +128,7 @@ class _JoinScreenState extends State<JoinScreen> {
                   FilledButton.icon(
                     onPressed: _busy ? null : () => _submit(createNew: true),
                     icon: const Icon(Icons.add_link),
-                    label: const Text('Criar sala (gera um código)'),
+                    label: Text(AppStrings.t(context, 'join.create_room')),
                   ),
                   const SizedBox(height: 14),
                   Row(
@@ -137,7 +137,7 @@ class _JoinScreenState extends State<JoinScreen> {
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
-                          'ou entre com o código',
+                          AppStrings.t(context, 'join.or_enter'),
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
@@ -155,22 +155,21 @@ class _JoinScreenState extends State<JoinScreen> {
                       letterSpacing: 8,
                       fontWeight: FontWeight.bold,
                     ),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       counterText: '',
                       hintText: 'K7PD',
-                      labelText: 'Código combinado com a amiga',
+                      labelText: AppStrings.t(context, 'join.code_hint'),
                     ),
                   ),
                   const SizedBox(height: 14),
                   OutlinedButton.icon(
                     onPressed: _busy ? null : () => _submit(createNew: false),
                     icon: const Icon(Icons.meeting_room_outlined),
-                    label: const Text('Entrar na sala'),
+                    label: Text(AppStrings.t(context, 'join.enter_room')),
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    'O app usa um servidor público gratuito (broker.emqx.io) — '
-                    'não precisa criar conta.',
+                    AppStrings.t(context, 'join.server_note'),
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.white38,
