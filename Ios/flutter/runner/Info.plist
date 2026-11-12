@@ -51,5 +51,33 @@
         <string>Usamos a galeria para você escolher fotos para mandar na conversa.</string>
         <key>NSPhotoLibraryAddUsageDescription</key>
         <string>Permite salvar as fotos recebidas na conversa.</string>
+        <!--
+          App Transport Security (ATS).
+
+          Configuração RESTRITIVA (correta para App Store):
+          - Por padrão, exige HTTPS com TLS 1.2+ para tudo.
+          - Exceção SOMENTE para broker.emqx.io, que precisa de
+            cleartext na porta 1883 (MQTT TCP puro).
+          - As portas 8883 (TLS) e 8084 (WSS) já passam pela
+            política HTTPS padrão, sem precisar de exceção.
+
+          Substitui a config anterior NSAllowsArbitraryLoads=true,
+          que era MUITO permissiva e rejeitada pela App Store.
+        -->
+        <key>NSAppTransportSecurity</key>
+        <dict>
+                <key>NSExceptionDomains</key>
+                <dict>
+                        <key>broker.emqx.io</key>
+                        <dict>
+                                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                                <true/>
+                                <key>NSIncludesSubdomains</key>
+                                <false/>
+                                <key>NSTemporaryExceptionMinimumTLSVersion</key>
+                                <string>TLSv1.0</string>
+                        </dict>
+                </dict>
+        </dict>
 </dict>
 </plist>
