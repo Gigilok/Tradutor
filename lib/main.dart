@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'config.dart';
+import 'l10n/strings.dart';
 import 'screens/home_screen.dart';
 import 'screens/join_screen.dart';
 import 'services/app_state.dart';
@@ -36,67 +37,77 @@ class PonteApp extends StatelessWidget {
       brightness: Brightness.dark,
     );
 
-    return MaterialApp(
-      title: AppConfig.appName,
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: scheme,
-        scaffoldBackgroundColor: const Color(0xFF121417),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF1A1D21),
-          foregroundColor: Colors.white,
-          elevation: 0,
-          centerTitle: true,
-        ),
-        cardTheme: CardTheme(
-          color: const Color(0xFF1E2227),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+    // >>> CORREÇÃO: ler o idioma atual do AppState para que o
+    // MaterialApp reconstrua quando o usuário trocar de idioma nas
+    // Ajustes. context.watch<AppState>() faz o widget reconstruir
+    // sempre que notifyListeners() for chamado (inclusive em
+    // updateProfile quando o idioma muda).
+    final state = context.watch<AppState>();
+
+    return LangProvider(
+      lang: state.lang,
+      child: MaterialApp(
+        title: AppConfig.appName,
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          colorScheme: scheme,
+          scaffoldBackgroundColor: const Color(0xFF121417),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFF1A1D21),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            centerTitle: true,
           ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: const Color(0xFF1E2227),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(64, 50),
+          cardTheme: CardTheme(
+            color: const Color(0xFF1E2227),
+            elevation: 0,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-            textStyle: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
-        outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(64, 50),
-            side: BorderSide(color: scheme.primary.withOpacity(0.5)),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(16),
             ),
           ),
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: const Color(0xFF1E2227),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+          filledButtonTheme: FilledButtonThemeData(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(64, 50),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              textStyle: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          outlinedButtonTheme: OutlinedButtonThemeData(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(64, 50),
+              side: BorderSide(color: scheme.primary.withOpacity(0.5)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+          snackBarTheme: const SnackBarThemeData(
+            behavior: SnackBarBehavior.floating,
+          ),
         ),
-        snackBarTheme: const SnackBarThemeData(
-          behavior: SnackBarBehavior.floating,
-        ),
+        builder: (context, child) {
+          // Corrige o texto do sistema para não estourar em fontes grandes.
+          return MediaQuery.withClampedTextScaling(
+            minScaleFactor: 0.85,
+            maxScaleFactor: 1.4,
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
+        home: const AppEntry(),
       ),
-      builder: (context, child) {
-        // Corrige o texto do sistema para não estourar em fontes grandes.
-        return MediaQuery.withClampedTextScaling(
-          minScaleFactor: 0.85,
-          maxScaleFactor: 1.4,
-          child: child ?? const SizedBox.shrink(),
-        );
-      },
-      home: const AppEntry(),
     );
   }
 }
