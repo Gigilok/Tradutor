@@ -64,6 +64,15 @@ class PonteNet {
   final Map<String, int> _photoTotal = {};
   final Set<String> _seenChatIds = {};
 
+  // >>> CORREÇÃO #11 (persistência): histórico salvo localmente em
+  // SharedPreferences (JSON serializado). Antes, o histórico era só em
+  // memória — quando o usuário saía da sala ou reiniciava o app,
+  // TODAS as mensagens sumiam. Agora salvamos ao receber e carregamos
+  // ao entrar na sala, mantendo as últimas 200 mensagens por sala.
+  // Fotos NÃO são salvas aqui (já estão em disco via PhotoStore),
+  // só a referência photoId.
+  static const int _maxSavedMessages = 200;
+
   // Controle de limpeza do histórico (o servidor público guarda pouco).
   final List<String> _myHistTopics = [];
   final List<String> _myPhotoIds = [];
@@ -137,6 +146,13 @@ class PonteNet {
     await _teardown();
     _room = roomCode;
     _connecting = true;
+    // >>> CORREÇÃO #11: carrega histórico salvo localmente ANTES de
+    // conectar. Assim, quando a ChatScreen chamar loadMessages() logo
+    // depois, já encontra as mensagens antigas — sem esperar o broker
+    // entregar as retained (que podem demorar ou ser menos que o
+    // salvo localmente). Mensagens novas que chegarem via MQTT são
+    // deduplicadas pelo id (ver _onChatJson).
+    await _loadHistory();
     final falhas = <String>[];
     try {
       for (final via in _Via.values) {
@@ -248,6 +264,13 @@ class PonteNet {
   }
 
   /// Desconecta de verdade (ao sair da sala) avisando que ficou offline.
+  ///
+  /// >>> CORREÇÃO #11 (persistência): NÃO limpamos mais _history aqui.
+  /// Antes, sair da sala apagava TODAS as mensagens da memória — e como
+  /// não havia persistência local, o usuário perdia tudo ao sair ou ao
+  /// reiniciar o app. Agora o histórico fica salvo em SharedPreferences
+  /// por sala (ver _saveHistory / _loadHistory), e só é limpo se o
+  /// usuário explicitamente pedir via clearHistory(roomCode).
   Future<void> disconnect() async {
     try {
       if (isConnected) {
@@ -258,9 +281,13 @@ class PonteNet {
     } catch (_) {
       // silencioso
     }
+    // Salva o histórico atual antes de derrubar a conexão.
+    await _saveHistory();
     await _teardown();
     _room = '';
-    _history.clear();
+    // >>> NÃO chamamos _history.clear() aqui — ver comentário acima.
+    // Limpamos só caches efêmeras (presence, chunks de foto em andamento,
+    // movies que vêm do broker via retained, etc.).
     _movies.clear();
     _presence.clear();
     _photoMeta.clear();
@@ -271,8 +298,80 @@ class PonteNet {
     _myPhotoIds.clear();
     _histDeadline = null;
     _moviesDeadline = null;
-    // >>> CORREÇÃO #4: limpar o último estado de reprodução ao sair.
     _lastPlayback = null;
+  }
+
+  /// >>> CORREÇÃO #11: apaga o histórico local de uma sala específica.
+  /// Chamado quando o usuário pede explicitamente via Ajustes
+  /// ("Limpar histórico desta sala").
+  Future<void> clearHistory(String roomCode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('history_$roomCode');
+    if (_room == roomCode) {
+      _history.clear();
+      _seenChatIds.clear();
+    }
+  }
+
+  /// >>> CORREÇÃO #11: salva o histórico atual em SharedPreferences.
+  /// Serializa as últimas _maxSavedMessages mensagens como JSON.
+  /// Fotos não são incluídas (só o photoId — a foto em si está em disco
+  /// via PhotoStore). Mensagens do sistema também não são salvas
+  /// (são efêmeras: "X entrou na sala").
+  Future<void> _saveHistory() async {
+    if (_room.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = _history.values.toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      // Pega as últimas N (mais recentes), descarta as antigas.
+      final recent = list.length > _maxSavedMessages
+          ? list.sublist(list.length - _maxSavedMessages)
+          : list;
+      // Filtra mensagens do sistema (não faz sentido persistir
+      // "X entrou na sala" — perde o contexto ao recarregar).
+      final persistable = recent.where((m) => !m.isSystem).toList();
+      final json = persistable.map((m) => {
+        'id': m.id,
+        'room': m.roomId,
+        'name': m.senderName,
+        'lang': m.senderLang,
+        'kind': m.kind,
+        'text': m.original,
+        if (m.photoId != null) 'photoId': m.photoId,
+        'ts': m.createdAt.millisecondsSinceEpoch,
+      }).toList();
+      await prefs.setString('history_$_room', jsonEncode(json));
+    } catch (_) {
+      // silencioso: não queremos quebrar o fluxo se o prefs falhar.
+    }
+  }
+
+  /// >>> CORREÇÃO #11: carrega o histórico salvo localmente ao entrar
+  /// na sala. Mensagens que chegarem via MQTT (retained ou ao vivo)
+  /// são deduplicadas pelo id (ver _onChatJson).
+  Future<void> _loadHistory() async {
+    if (_room.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('history_$_room');
+      if (raw == null || raw.isEmpty) return;
+      final list = jsonDecode(raw);
+      if (list is! List) return;
+      for (final item in list) {
+        if (item is! Map<String, dynamic>) continue;
+        final id = item['id'] as String?;
+        if (id == null || _seenChatIds.contains(id)) continue;
+        _seenChatIds.add(id);
+        final msg = Message.fromMqtt(item, room: _room);
+        _history[id] = msg;
+        // NÃO dispara onMessage aqui — as mensagens estão sendo
+        // carregadas do disco, não chegando agora. A ChatScreen
+        // vai ler via loadMessages() e incluir na lista.
+      }
+    } catch (_) {
+      // silencioso
+    }
   }
 
   void _onConnected() {
@@ -370,6 +469,9 @@ class PonteNet {
     _seenChatIds.add(id);
     final message = Message.fromMqtt(json, room: _room);
     _history[id] = message;
+    // >>> CORREÇÃO #11: persistir localmente cada nova mensagem que chega.
+    // Fazer de forma assíncrona sem bloquear o callback.
+    _saveHistory();
     final cb = onMessage;
     if (cb != null) cb(message);
   }
