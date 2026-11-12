@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../config.dart';
+import '../l10n/strings.dart';
 import '../services/app_state.dart';
 import 'join_screen.dart';
 
@@ -82,7 +83,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Ajustes')),
+      appBar: AppBar(title: Text(AppStrings.t(context, 'settings.title'))),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -133,17 +134,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   TextField(
                     controller: _nameController,
                     textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(
-                      labelText: 'Seu nome',
-                      prefixIcon: Icon(Icons.person_outline),
+                    decoration: InputDecoration(
+                      labelText: AppStrings.t(context, 'settings.name_label'),
+                      prefixIcon: const Icon(Icons.person_outline),
                     ),
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
                     value: _lang,
-                    decoration: const InputDecoration(
-                      labelText: 'Seu idioma',
-                      prefixIcon: Icon(Icons.translate),
+                    decoration: InputDecoration(
+                      labelText: AppStrings.t(context, 'settings.lang_label'),
+                      prefixIcon: const Icon(Icons.translate),
                     ),
                     items: AppConfig.languages.entries
                         .map(
@@ -163,7 +164,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: FilledButton.icon(
                       onPressed: _save,
                       icon: const Icon(Icons.check),
-                      label: const Text('Salvar perfil'),
+                      label: Text(AppStrings.t(context, 'settings.save_profile')),
                     ),
                   ),
                 ],
@@ -174,21 +175,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Card(
             child: ListTile(
               leading: const Icon(Icons.meeting_room_outlined),
-              title: const Text('Código da sala'),
+              title: Text(AppStrings.t(context, 'settings.room_code')),
               subtitle: Text(
-                '${state.roomCode} — mande este código para a sua amiga '
-                'para ela entrar',
+                AppStrings.t(context, 'settings.room_code_subtitle')
+                    .format({'code': state.roomCode}),
               ),
               trailing: IconButton(
                 icon: const Icon(Icons.copy),
-                tooltip: 'Copiar código',
+                tooltip: AppStrings.t(context, 'settings.copy_code'),
                 onPressed: () {
                   // Clipboard do Flutter.
-                  // ignore: unawaited_futures
+                  // ignore: avoid_print
                   Clipboard.setData(ClipboardData(text: state.roomCode));
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Código ${state.roomCode} copiado!'),
+                      content: Text(AppStrings.t(context, 'settings.code_copied')
+                          .format({'code': state.roomCode})),
                     ),
                   );
                 },
@@ -201,32 +203,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: ListTile(
               leading: Icon(Icons.logout, color: scheme.error),
               title: Text(
-                'Sair da sala',
+                AppStrings.t(context, 'settings.leave_room'),
                 style: TextStyle(color: scheme.error),
               ),
               onTap: _leaveRoom,
             ),
           ),
           const SizedBox(height: 14),
-          const Card(
+          // >>> CORREÇÃO #11: botão para limpar explicitamente o histórico
+          // local desta sala. Antes não existia — só dar sair da sala NÃO
+          // limpa mais (permite voltar e ver as mensagens antigas).
+          Card(
+            color: scheme.errorContainer.withOpacity(0.20),
+            child: ListTile(
+              leading: Icon(Icons.delete_sweep_outlined, color: scheme.error),
+              title: Text(
+                AppStrings.t(context, 'settings.clear_history'),
+                style: TextStyle(color: scheme.error),
+              ),
+              onTap: _clearHistory,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Card(
             child: Padding(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Como funciona a tradução',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    AppStrings.t(context, 'settings.how_translation_works'),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Text(
-                    'Cada mensagem chega para a outra pessoa com as duas '
-                    'versões: a original e a traduzida para o idioma dela. '
-                    'A tradução usa serviços gratuitos (Google Translate e '
-                    'MyMemory) direto do aparelho — não precisa de chave '
-                    'nem paga nada. Se a tradução falhar uma hora, é só '
-                    'tocar em "tentar de novo" na própria bolha.',
-                    style: TextStyle(
+                    AppStrings.t(context, 'settings.translation_body'),
+                    style: const TextStyle(
                       fontSize: 12.5,
                       color: Colors.white70,
                       height: 1.5,
