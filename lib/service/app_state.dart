@@ -18,19 +18,33 @@ class AppState extends ChangeNotifier {
   bool get isLoggedIn => name.isNotEmpty && roomCode.isNotEmpty;
 
   Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    name = prefs.getString('profile_name') ?? '';
-    lang = prefs.getString('profile_lang') ?? 'pt';
-    roomCode = prefs.getString('room_code') ?? '';
-    roomId = roomCode;
-    notifyListeners();
+    // >>> CORREÇÃO: try/catch — se o SharedPreferences falhar (ex. disco
+    // cheio), o app não deve crashar na inicialização.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      name = prefs.getString('profile_name') ?? '';
+      lang = prefs.getString('profile_lang') ?? 'pt';
+      roomCode = prefs.getString('room_code') ?? '';
+      roomId = roomCode;
+      notifyListeners();
+    } catch (e) {
+      // Fallback silencioso: deixa os defaults (name='', lang='pt',
+      // roomCode=''). Usuário vai para a JoinScreen preencher de novo.
+      lang = 'pt';
+      notifyListeners();
+    }
   }
 
   Future<void> _save() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('profile_name', name);
-    await prefs.setString('profile_lang', lang);
-    await prefs.setString('room_code', roomCode);
+    // >>> CORREÇÃO: try/catch pela mesma razão acima.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('profile_name', name);
+      await prefs.setString('profile_lang', lang);
+      await prefs.setString('room_code', roomCode);
+    } catch (_) {
+      // silencioso: se não conseguiu salvar, segue o jogo em memória.
+    }
   }
 
   /// Cria uma nova sala com c贸digo aleat贸rio de 4 caracteres.
@@ -89,12 +103,29 @@ class AppState extends ChangeNotifier {
   }
 
   /// Sai da sala (limpa o v铆nculo guardado no aparelho).
+  ///
+  /// >>> CORREÇÃO #11: o histórico da sala NÃO é apagado ao sair —
+  /// ele fica salvo em SharedPreferences por sala (ver
+  /// PonteNet._saveHistory). Se o usuário voltar a entrar na mesma
+  /// sala, as mensagens aparecem de novo. Para apagar explicitamente,
+  /// usar clearHistory(roomCode) a partir dos Ajustes.
   Future<void> leaveRoom() async {
     await PonteNet.instance.disconnect();
+    final oldRoom = roomCode;
     roomCode = '';
     roomId = '';
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('room_code');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('room_code');
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// >>> CORREÇÃO #11: apaga o histórico local de uma sala específica.
+  /// Chamado pelo botão "Limpar histórico" nos Ajustes.
+  Future<void> clearHistory() async {
+    if (roomCode.isEmpty) return;
+    await PonteNet.instance.clearHistory(roomCode);
     notifyListeners();
   }
 
